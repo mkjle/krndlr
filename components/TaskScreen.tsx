@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { Task } from '../types';
-import { speak } from '../services/speechService';
+import { Task, Operation } from '../types';
+import { speak } from '../speechService';
 
 interface TaskScreenProps {
   task: Task;
@@ -9,8 +9,13 @@ interface TaskScreenProps {
   onComplete: (userAnswer: number | null, isCorrect: boolean, durationMs: number) => void;
   isDelayEnabled: boolean;
   isImmediateFeedbackEnabled: boolean;
+  taskTime: number | 'dynamic';
+  beepBefore: number | 'off';
   onPlayBeep: () => void;
   onAbort: () => void;
+  deleteMode: 'all' | 'last';
+  voiceVolume: number;
+  showTimerBar: boolean;
 }
 
 type FeedbackState = 'idle' | 'correct' | 'incorrect';
@@ -26,11 +31,58 @@ const getFeedbackClasses = (state: FeedbackState) => {
   }
 };
 
-export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalTasks, onComplete, isDelayEnabled, isImmediateFeedbackEnabled, onPlayBeep, onAbort }) => {
+const getBaseTimeForOperation = (op: Operation): number => {
+    switch (op) {
+        case Operation.Add:
+        case Operation.Subtract:
+            return 15;
+        case Operation.Multiply:
+        case Operation.Divide:
+        case Operation.Square:
+            return 20;
+        case Operation.Cube:
+            return 23;
+        case Operation.SquareRoot:
+            return 25;
+        default:
+            return 15; // Fallback for any unknown operation
+    }
+};
+
+const calculateDynamicTime = (task: Task): number => {
+    // additionalOps is the number of operations beyond the first one.
+    // For Square, Cube, Sqrt, numbers.length is 1, so additionalOps is -1.
+    // For single chained operations (e.g. 1+2), numbers.length is 2, so additionalOps is 0.
+    const additionalOps = task.numbers.length - 2;
+    const primaryTime = getBaseTimeForOperation(task.operation);
+
+    // This handles tasks with only 1 operation (e.g. 1+2, 100/5, sqrt(25)).
+    if (additionalOps <= 0) {
+        return primaryTime;
+    }
+
+    // Special case: For a chain of ONLY additions, subsequent additions get half time.
+    const isPureAdditionChain = task.operation === Operation.Add && !task.questionText.includes('-');
+    if (isPureAdditionChain) {
+        const additionalTime = additionalOps * (15 / 2); // 7.5s for each extra addition
+        return Math.round(primaryTime + additionalTime);
+    }
+    
+    // Default case: Sum of the time for the primary operation and the full time for all subsequent operations.
+    // Subsequent operations are always Add or Subtract, which have a base time of 15.
+    const additionalTime = additionalOps * 15;
+    const totalTime = primaryTime + additionalTime;
+    
+    return Math.round(totalTime);
+};
+
+
+export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalTasks, onComplete, isDelayEnabled, isImmediateFeedbackEnabled, taskTime, beepBefore, onPlayBeep, onAbort, deleteMode, voiceVolume, showTimerBar }) => {
   const [inputValue, setInputValue] = useState('');
   const [feedback, setFeedback] = useState<FeedbackState>('idle');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pressingKey, setPressingKey] = useState<string | null>(null);
+  const [timerProgress, setTimerProgress] = useState(100);
   const startTimeRef = useRef(Date.now());
   
   const onCompleteRef = useRef(onComplete);
@@ -69,20 +121,45 @@ export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalT
 
 
   useEffect(() => {
-    speak(task.questionSpeech);
+    let beepTimer: ReturnType<typeof setTimeout> | undefined;
+    let submitTimer: ReturnType<typeof setTimeout> | undefined;
+    let progressInterval: ReturnType<typeof setInterval> | undefined;
 
-    const beepTimer = setTimeout(onPlayBeep, 30000);
+    const startTimersAndMeasurement = () => {
+        // Start measuring time only after the question has been read
+        startTimeRef.current = Date.now();
 
-    const submitTimer = setTimeout(() => {
-        submitAnswerRef.current(inputValueRef.current);
-    }, 35000);
+        const totalTimeS = taskTime === 'dynamic' ? calculateDynamicTime(task) : taskTime;
+        const totalTimeMs = totalTimeS * 1000;
+
+        if (beepBefore !== 'off' && totalTimeS > beepBefore) {
+            beepTimer = setTimeout(onPlayBeep, totalTimeMs - (beepBefore * 1000));
+        }
+
+        submitTimer = setTimeout(() => {
+            submitAnswerRef.current(inputValueRef.current);
+        }, totalTimeMs);
+        
+        if (showTimerBar) {
+            progressInterval = setInterval(() => {
+                const elapsed = Date.now() - startTimeRef.current;
+                const remaining = Math.max(0, totalTimeMs - elapsed);
+                const progress = (remaining / totalTimeMs) * 100;
+                setTimerProgress(progress);
+            }, 50);
+        }
+    };
+
+    // Speak the question, and *then* start the timers.
+    speak(task.questionSpeech, voiceVolume).then(startTimersAndMeasurement);
 
     return () => {
-        clearTimeout(beepTimer);
-        clearTimeout(submitTimer);
+        if (beepTimer) clearTimeout(beepTimer);
+        if (submitTimer) clearTimeout(submitTimer);
+        if (progressInterval) clearInterval(progressInterval);
         window.speechSynthesis.cancel();
     };
-  }, [task, onPlayBeep]);
+  }, [task, onPlayBeep, taskTime, beepBefore, voiceVolume, showTimerBar]);
 
   const handleDelayedInput = (action: () => void, key: string) => {
     if (isSubmitting || pressingKey) return;
@@ -107,7 +184,11 @@ export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalT
 
   const handleDelete = () => {
      handleDelayedInput(() => {
-      setInputValue('');
+      if (deleteMode === 'all') {
+        setInputValue('');
+      } else {
+        setInputValue(prev => prev.slice(0, -1));
+      }
     }, 'delete');
   };
   
@@ -135,6 +216,14 @@ export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalT
         <div className="w-full bg-slate-700 rounded-full h-2.5 mt-1">
           <div className="bg-cyan-500 h-2.5 rounded-full" style={{ width: `${(taskNumber / totalTasks) * 100}%` }}></div>
         </div>
+         {showTimerBar && (
+            <div className="w-full bg-slate-700 rounded-full h-4 mt-3 transition-opacity duration-300">
+                <div 
+                    className="bg-yellow-500 h-4 rounded-full" 
+                    style={{ width: `${timerProgress}%`, transition: 'width 0.05s linear' }}>
+                </div>
+            </div>
+        )}
       </div>
 
       <div className="h-24 flex items-center justify-center w-full mb-6" aria-hidden="true">

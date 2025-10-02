@@ -97,7 +97,7 @@ const generateTask = (id: number, enabledOps?: Operation[], taskComplexity: numb
             break;
         }
         case Operation.Cube: {
-            const n = rand(3, 15);
+            const n = rand(3, 10);
             numbers = [n];
             answer = n * n * n;
             questionText = `${n}³`;

@@ -38,7 +38,7 @@ if (typeof window !== 'undefined' && window.speechSynthesis) {
   }
 }
 
-export const speak = (text: string): Promise<void> => {
+export const speak = (text: string, volume: number = 1.0): Promise<void> => {
   return new Promise((resolve) => {
     if (!window.speechSynthesis) {
       console.warn("Speech Synthesis not supported by this browser.");
@@ -59,6 +59,7 @@ export const speak = (text: string): Promise<void> => {
     
     utterance.lang = 'de-DE';
     utterance.rate = 0.9; // Slightly slower for clarity
+    utterance.volume = volume; // Set the volume
 
     utterance.onend = () => {
       resolve();

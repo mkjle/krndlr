@@ -8,10 +8,9 @@ interface WelcomeScreenProps {
 export const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onStart, onShowOptions }) => {
   return (
     <div className="text-center p-8 bg-slate-800 rounded-lg shadow-xl animate-fade-in">
-      <h1 className="text-4xl font-bold text-cyan-400 mb-4">Akustischer Rechentrainer</h1>
+      <h1 className="text-4xl font-bold text-cyan-400 mb-4">Kopfrechnen</h1>
       <p className="text-lg text-slate-300 mb-8">
-        Teste deine Kopfrechenfähigkeiten. Jede Runde besteht aus 20 Aufgaben.
-        Die Aufgabe wird nur vorgelesen. Gib deine Antwort über das Zahlenfeld ein.
+        Kopfrechnen für den DLR-Test. Die Aufgabe wird nur vorgelesen.
       </p>
       <div className="flex flex-col sm:flex-row gap-4 justify-center">
         <button

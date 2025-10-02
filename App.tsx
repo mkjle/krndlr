@@ -23,6 +23,12 @@ const App: React.FC = () => {
   const [taskComplexity, setTaskComplexity] = useState<number | 'random'>('random');
   const [isImmediateFeedbackEnabled, setIsImmediateFeedbackEnabled] = useState<boolean>(true);
   const [numberOfTasks, setNumberOfTasks] = useState<number>(20);
+  const [taskTime, setTaskTime] = useState<number | 'dynamic'>('dynamic');
+  const [beepBefore, setBeepBefore] = useState<number | 'off'>(5);
+  const [deleteMode, setDeleteMode] = useState<'all' | 'last'>('all');
+  const [beepVolume, setBeepVolume] = useState<number>(0.6);
+  const [voiceVolume, setVoiceVolume] = useState<number>(1.0);
+  const [showTimerBar, setShowTimerBar] = useState<boolean>(false);
 
   const audioCtxRef = useRef<AudioContext | null>(null);
 
@@ -44,13 +50,11 @@ const App: React.FC = () => {
     oscillator.type = 'square';
     oscillator.frequency.setValueAtTime(2800, audioCtx.currentTime);
 
-    // "lauter" -> increase gain to max.
-    // "ein ton sein, nicht ein klang" -> remove the decay/ramp
-    gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+    gainNode.gain.setValueAtTime(beepVolume, audioCtx.currentTime);
     
     oscillator.start(audioCtx.currentTime);
     oscillator.stop(audioCtx.currentTime + 0.7);
-  }, []);
+  }, [beepVolume]);
 
   const startNewRun = useCallback(() => {
     // Initialize AudioContext on first user interaction
@@ -89,7 +93,16 @@ const App: React.FC = () => {
       }
       return newSet;
     });
+    // Lock complexity to 2 whenever operations are manually changed
+    setTaskComplexity(2);
   };
+  
+  const handleTaskComplexityChange = (complexity: number | 'random') => {
+    setTaskComplexity(complexity);
+    // When complexity is changed, re-enable all operations for a full challenge
+    setEnabledOperations(new Set(allOperations));
+  };
+
 
   const handleTaskCompletion = useCallback((userAnswer: number | null, isCorrect: boolean, durationMs: number) => {
     setUserAnswers(prev => [...prev, { task: tasks[currentTaskIndex], userAnswer, isCorrect, durationMs }]);
@@ -116,8 +129,13 @@ const App: React.FC = () => {
             onComplete={handleTaskCompletion}
             isDelayEnabled={isDelayEnabled}
             isImmediateFeedbackEnabled={isImmediateFeedbackEnabled}
+            taskTime={taskTime}
+            beepBefore={beepBefore}
             onPlayBeep={playBeepSound}
             onAbort={abortRun}
+            deleteMode={deleteMode}
+            voiceVolume={voiceVolume}
+            showTimerBar={showTimerBar}
           />
         );
       case GameState.Summary:
@@ -137,9 +155,21 @@ const App: React.FC = () => {
                 isImmediateFeedbackEnabled={isImmediateFeedbackEnabled}
                 onToggleImmediateFeedback={toggleImmediateFeedback}
                 taskComplexity={taskComplexity}
-                onTaskComplexityChange={setTaskComplexity}
+                onTaskComplexityChange={handleTaskComplexityChange}
                 numberOfTasks={numberOfTasks}
                 onNumberOfTasksChange={setNumberOfTasks}
+                taskTime={taskTime}
+                onTaskTimeChange={setTaskTime}
+                beepBefore={beepBefore}
+                onBeepBeforeChange={setBeepBefore}
+                deleteMode={deleteMode}
+                onDeleteModeChange={setDeleteMode}
+                beepVolume={beepVolume}
+                onBeepVolumeChange={setBeepVolume}
+                voiceVolume={voiceVolume}
+                onVoiceVolumeChange={setVoiceVolume}
+                showTimerBar={showTimerBar}
+                onShowTimerBarChange={setShowTimerBar}
                 onDone={showWelcome}
             />
         );
