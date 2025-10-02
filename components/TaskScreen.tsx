@@ -8,6 +8,8 @@ interface TaskScreenProps {
   totalTasks: number;
   onComplete: (userAnswer: number | null, isCorrect: boolean, durationMs: number) => void;
   isDelayEnabled: boolean;
+  isImmediateFeedbackEnabled: boolean;
+  onPlayBeep: () => void;
   onAbort: () => void;
 }
 
@@ -24,26 +26,7 @@ const getFeedbackClasses = (state: FeedbackState) => {
   }
 };
 
-const playBeep = () => {
-    try {
-        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
-        if (!audioCtx) return;
-
-        const oscillator = audioCtx.createOscillator();
-        oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 note
-        oscillator.connect(audioCtx.destination);
-        oscillator.start();
-        setTimeout(() => {
-            oscillator.stop();
-            audioCtx.close().catch(e => console.error("Error closing AudioContext", e));
-        }, 200);
-    } catch (e) {
-        console.error("Could not play beep sound", e);
-    }
-};
-
-export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalTasks, onComplete, isDelayEnabled, onAbort }) => {
+export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalTasks, onComplete, isDelayEnabled, isImmediateFeedbackEnabled, onPlayBeep, onAbort }) => {
   const [inputValue, setInputValue] = useState('');
   const [feedback, setFeedback] = useState<FeedbackState>('idle');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,12 +47,15 @@ export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalT
     const userAnswer = (finalInputValue === '' || finalInputValue === '-') ? null : parseInt(finalInputValue, 10);
     const isCorrect = userAnswer !== null && userAnswer === task.answer;
 
-    setFeedback(isCorrect ? 'correct' : 'incorrect');
+    if (isImmediateFeedbackEnabled) {
+      setFeedback(isCorrect ? 'correct' : 'incorrect');
+    }
 
+    const feedbackDelay = isImmediateFeedbackEnabled ? 1200 : 500;
     setTimeout(() => {
       onCompleteRef.current(userAnswer, isCorrect, durationMs);
-    }, 1200);
-  }, [isSubmitting, task.answer]);
+    }, feedbackDelay);
+  }, [isSubmitting, task.answer, isImmediateFeedbackEnabled]);
 
   const inputValueRef = useRef(inputValue);
   useEffect(() => {
@@ -85,7 +71,7 @@ export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalT
   useEffect(() => {
     speak(task.questionSpeech);
 
-    const beepTimer = setTimeout(playBeep, 30000);
+    const beepTimer = setTimeout(onPlayBeep, 30000);
 
     const submitTimer = setTimeout(() => {
         submitAnswerRef.current(inputValueRef.current);
@@ -96,7 +82,7 @@ export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalT
         clearTimeout(submitTimer);
         window.speechSynthesis.cancel();
     };
-  }, [task]);
+  }, [task, onPlayBeep]);
 
   const handleDelayedInput = (action: () => void, key: string) => {
     if (isSubmitting || pressingKey) return;

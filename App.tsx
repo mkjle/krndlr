@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { TaskScreen } from './components/TaskScreen';
 import { SummaryScreen } from './components/SummaryScreen';
@@ -20,16 +20,57 @@ const App: React.FC = () => {
     new Set(allOperations)
   );
   const [isDelayEnabled, setIsDelayEnabled] = useState<boolean>(true);
+  const [taskComplexity, setTaskComplexity] = useState<number | 'random'>('random');
+  const [isImmediateFeedbackEnabled, setIsImmediateFeedbackEnabled] = useState<boolean>(true);
+  const [numberOfTasks, setNumberOfTasks] = useState<number>(20);
+
+  const audioCtxRef = useRef<AudioContext | null>(null);
+
+  const playBeepSound = useCallback(() => {
+    const audioCtx = audioCtxRef.current;
+    if (!audioCtx) return;
+
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+
+    const oscillator = audioCtx.createOscillator();
+    const gainNode = audioCtx.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    // "schrilles" & "aggressiv" -> higher frequency and square wave
+    oscillator.type = 'square';
+    oscillator.frequency.setValueAtTime(2800, audioCtx.currentTime);
+
+    // "lauter" -> increase gain to max.
+    // "ein ton sein, nicht ein klang" -> remove the decay/ramp
+    gainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+    
+    oscillator.start(audioCtx.currentTime);
+    oscillator.stop(audioCtx.currentTime + 0.7);
+  }, []);
 
   const startNewRun = useCallback(() => {
-    const newTasks = generateRun(Array.from(enabledOperations));
+    // Initialize AudioContext on first user interaction
+    if (!audioCtxRef.current) {
+        try {
+             audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+        } catch (e) {
+            console.error("Web Audio API is not supported in this browser.", e);
+        }
+    }
+
+    const newTasks = generateRun(Array.from(enabledOperations), numberOfTasks, taskComplexity);
     setTasks(newTasks);
     setUserAnswers([]);
     setCurrentTaskIndex(0);
     setGameState(GameState.Task);
-  }, [enabledOperations]);
+  }, [enabledOperations, taskComplexity, numberOfTasks]);
   
   const toggleDelay = () => setIsDelayEnabled(prev => !prev);
+  const toggleImmediateFeedback = () => setIsImmediateFeedbackEnabled(prev => !prev);
 
   const abortRun = () => {
     window.speechSynthesis.cancel();
@@ -74,6 +115,8 @@ const App: React.FC = () => {
             totalTasks={tasks.length}
             onComplete={handleTaskCompletion}
             isDelayEnabled={isDelayEnabled}
+            isImmediateFeedbackEnabled={isImmediateFeedbackEnabled}
+            onPlayBeep={playBeepSound}
             onAbort={abortRun}
           />
         );
@@ -91,6 +134,12 @@ const App: React.FC = () => {
                 onToggleOperation={handleToggleOperation}
                 isDelayEnabled={isDelayEnabled}
                 onToggleDelay={toggleDelay}
+                isImmediateFeedbackEnabled={isImmediateFeedbackEnabled}
+                onToggleImmediateFeedback={toggleImmediateFeedback}
+                taskComplexity={taskComplexity}
+                onTaskComplexityChange={setTaskComplexity}
+                numberOfTasks={numberOfTasks}
+                onNumberOfTasksChange={setNumberOfTasks}
                 onDone={showWelcome}
             />
         );
