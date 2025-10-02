@@ -132,7 +132,7 @@ export const TaskScreen: React.FC<TaskScreenProps> = ({ task, taskNumber, totalT
         const totalTimeS = taskTime === 'dynamic' ? calculateDynamicTime(task) : taskTime;
         const totalTimeMs = totalTimeS * 1000;
 
-        if (beepBefore !== 'off' && totalTimeS > beepBefore) {
+        if (beepBefore !== 'off' && totalTimeS >= beepBefore) {
             beepTimer = setTimeout(onPlayBeep, totalTimeMs - (beepBefore * 1000));
         }
 

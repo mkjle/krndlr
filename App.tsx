@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { TaskScreen } from './components/TaskScreen';
 import { SummaryScreen } from './components/SummaryScreen';
@@ -10,6 +10,103 @@ import { GameState, Operation } from './types';
 const allOperations = Object.values(Operation).filter(
   (v) => typeof v === 'number'
 ) as Operation[];
+
+// --- Audio Service Logic using HTMLAudioElement ---
+
+let beepAudioElement: HTMLAudioElement | null = null;
+
+/**
+ * Generates a WAV audio file as a base64 Data URI.
+ * This is more reliable for simple sounds than Web Audio API across some browsers.
+ */
+const createWavDataUri = (): string => {
+    const sampleRate = 44100;
+    const durationSeconds = 0.7; // A single, longer beep
+    const frequency = 660; // E5 note, less piercing than before
+    const volume = 0.5;
+
+    const numFrames = Math.floor(sampleRate * durationSeconds);
+    const numChannels = 1;
+    const bytesPerSample = 2; // 16-bit audio
+    const blockAlign = numChannels * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = numFrames * blockAlign;
+
+    const buffer = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buffer);
+
+    // RIFF header
+    view.setUint32(0, 0x52494646, false); // "RIFF"
+    view.setUint32(4, 36 + dataSize, true);
+    view.setUint32(8, 0x57415645, false); // "WAVE"
+
+    // "fmt " sub-chunk
+    view.setUint32(12, 0x666d7420, false); // "fmt "
+    view.setUint32(16, 16, true); // Sub-chunk size
+    view.setUint16(20, 1, true); // Audio format (1 = PCM)
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, byteRate, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bytesPerSample * 8, true); // Bits per sample
+
+    // "data" sub-chunk
+    view.setUint32(36, 0x64617461, false); // "data"
+    view.setUint32(40, dataSize, true);
+
+    // PCM data
+    let offset = 44;
+    for (let i = 0; i < numFrames; i++) {
+        const angle = (i / sampleRate) * frequency * 2 * Math.PI;
+        const sample = Math.sin(angle) * volume * 32767;
+        view.setInt16(offset, sample, true);
+        offset += bytesPerSample;
+    }
+
+    // Convert to base64
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = window.btoa(binary);
+
+    return `data:audio/wav;base64,${base64}`;
+};
+
+
+/**
+ * Initializes the audio system. Must be called from a user gesture (e.g., button click)
+ * to create the audio element.
+ */
+const initAudio = (): void => {
+  if (beepAudioElement) {
+    return;
+  }
+  
+  try {
+    beepAudioElement = new Audio(createWavDataUri());
+  } catch (e) {
+    console.error("Failed to create audio element.", e);
+  }
+};
+
+/**
+ * Plays the warning beep sound.
+ * @param volume - The volume of the beep, from 0.0 to 1.0.
+ */
+const playBeep = (volume: number): void => {
+  if (!beepAudioElement) {
+    console.warn('Audio not initialized. Cannot play beep. Ensure initAudio() was called on a user gesture.');
+    return;
+  }
+
+  beepAudioElement.currentTime = 0;
+  beepAudioElement.volume = volume;
+  beepAudioElement.play().catch(e => console.error("Audio playback failed", e));
+};
+// --- End of Audio Service Logic ---
+
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(GameState.Welcome);
@@ -26,45 +123,17 @@ const App: React.FC = () => {
   const [taskTime, setTaskTime] = useState<number | 'dynamic'>('dynamic');
   const [beepBefore, setBeepBefore] = useState<number | 'off'>(5);
   const [deleteMode, setDeleteMode] = useState<'all' | 'last'>('all');
-  const [beepVolume, setBeepVolume] = useState<number>(0.6);
+  const [beepVolume, setBeepVolume] = useState<number>(1.0);
   const [voiceVolume, setVoiceVolume] = useState<number>(1.0);
   const [showTimerBar, setShowTimerBar] = useState<boolean>(false);
 
-  const audioCtxRef = useRef<AudioContext | null>(null);
-
   const playBeepSound = useCallback(() => {
-    const audioCtx = audioCtxRef.current;
-    if (!audioCtx) return;
-
-    if (audioCtx.state === 'suspended') {
-      audioCtx.resume();
-    }
-
-    const oscillator = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
-
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-
-    // "schrilles" & "aggressiv" -> higher frequency and square wave
-    oscillator.type = 'square';
-    oscillator.frequency.setValueAtTime(2800, audioCtx.currentTime);
-
-    gainNode.gain.setValueAtTime(beepVolume, audioCtx.currentTime);
-    
-    oscillator.start(audioCtx.currentTime);
-    oscillator.stop(audioCtx.currentTime + 0.7);
+    playBeep(beepVolume);
   }, [beepVolume]);
 
   const startNewRun = useCallback(() => {
-    // Initialize AudioContext on first user interaction
-    if (!audioCtxRef.current) {
-        try {
-             audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-        } catch (e) {
-            console.error("Web Audio API is not supported in this browser.", e);
-        }
-    }
+    // Initialize/resume AudioContext on user gesture.
+    initAudio(); 
 
     const newTasks = generateRun(Array.from(enabledOperations), numberOfTasks, taskComplexity);
     setTasks(newTasks);

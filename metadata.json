@@ -1,5 +1,5 @@
 {
-  "name": "Acoustic Arithmetic Trainer",
+  "name": "Copy of Acoustic Arithmetic Trainer",
   "description": "An application to practice arithmetic skills acoustically. Problems are read aloud, and users can input answers after a short delay. The app provides feedback and a summary after each round of 20 tasks.",
   "requestFramePermissions": []
 }
